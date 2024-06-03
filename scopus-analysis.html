@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scopus analysis</title>
+
+    <link rel="stylesheet" href="scopus.css">
+
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.8.0/jszip.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.8.0/xlsx.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.13.1/xlsx.full.min.js"></script>  
+
+    <script type="text/javascript" src="scopus.js" defer></script>
+</head>
+
+<body>
+	<div id="configuration">
+    <h1>Conference analyser based on SCOPUS data</h1>
+    <p>Upload a spreadsheet. The tool will save an aggregated anslysis spreadhseet.</p>    
+        <h2>Add file</h2>
+        <ul>
+            <li>
+                <label for="file-selector"><span>File</span></label>
+                <input type="file" id="file-selector" accept=".xlsx, .xls, .csv, .json" multiple>
+            </li>
+        </ul>				
+    </div>		
+ 
+    <div id="finished" hidden>
+        <h1>Analysis complete</h1>
+        <p>Analysis report has been saved in a spreadsheet. The spreadsheet contains seveal sheets, each with a separate type of analysis.</p>
+    </div>
+
+</body>
+</html>
