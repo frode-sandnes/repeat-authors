@@ -12,6 +12,8 @@ const SCOPUS_REFERENCE = "References";
 const SCOPUS_SOURCE = "Source title";
 const SCOPUS_DOCUMENT_TYPE = "Document Type";
 const SCOPUS_CONFERENCE = "Conference paper";
+const SCOPUS_AUTHOR_KEYWORDS = "Author Keywords";
+const SCOPUS_INDEX_KEYWORDS = "Index Keywords";
 const SCOPUS_ARTICLE = "Article";
 const SCOPUS_EDITORS = "Editors";
 let SCOPUS_AUTHOR_DELIMINATOR = ",";
@@ -26,7 +28,7 @@ let paperFrequency = {};
 let authorConferences = {}; // object with conference array for post analysis 
 let authorPosition = {};    // list of positions for each author, as list - 1 = first, 2 = middle, 3 = last.
 let fileCounter = 0;
-
+let masterList = [];  // list of all the papers for all the conferences for easy reference (similarity)
 // aggregated
 let authorNumberConferences = {};
 
@@ -137,6 +139,9 @@ function runAnalysis()
     let spreadsheetData = [];  // for spreadsheet ouptut
     let conferenceNames = Object.keys(conferences);
     let confResults = conferenceNames.map(conference => analyseConference(conference, conferences[conference]));
+
+    // introduced for similarity analysis - a list of all the papers
+    masterList = conferenceNames.reduce((accum, confName) =>  [...accum, ...conferences[confName]], []);
 
     // aggregations
     Object.keys(authorConferences)
@@ -385,7 +390,7 @@ function runAnalysis()
 
 // store author data
     let authorDetails = Object.keys(paperFrequency)
-                              .map(id => ({name:authorShort[id], noPapers: paperFrequency[id], noConf: authorNumberConferences[id], diversity: diversity(id), solo: positionStats[id].solo, first: positionStats[id].first,middle: positionStats[id].middle, last: positionStats[id].last, citations: citations[id], gatekeeper: gatekeepers.has(id)}));
+                              .map(id => ({name:authorShort[id], noPapers: paperFrequency[id], noConf: authorNumberConferences[id], diversity: diversity(id), solo: positionStats[id].solo, first: positionStats[id].first,middle: positionStats[id].middle, last: positionStats[id].last, citations: citations[id], gatekeeper: gatekeepers.has(id), similarity: authorSimilarities(id)}));
 ////                              .map(id => ({name:authorShort[id], noPapers: paperFrequency[id], noConf: [...new Set(authorConferences[id])].length, diversity: ([...new Set(authorConferences[id])].length / paperFrequency[id]).toFixed(2)}));
     spreadsheetData.push({json:authorDetails, title: "Author details"});
 
@@ -550,6 +555,56 @@ function analyseConference(name, content)
 //    let noPapersWithRepeatedAuthors = cleanContent.filter(({[SCOPUS_AUTHOR]:authors}) => repeatedAuthors.some(repeatedAuthor => authors.includes(repeatedAuthor))).length;
     let noPapersWithRepeatedAuthors = cleanContent.filter(({[SCOPUS_AUTHOR_ID]:authors}) => repeatedAuthors.some(repeatedAuthor => authors.includes(repeatedAuthor))).length;
 
+
+
+
+    // Similarity analysis 03/11/2024 -- for R2
+    // group papers by repeated authors
+//    console.log(repeatedAuthors);
+    let repeatedPaperGrouping = cleanContent.filter(({[SCOPUS_AUTHOR_ID]:authors}) => repeatedAuthors.some(repeatedAuthor => authors.includes(repeatedAuthor)))
+                .reduce((accum, paper) => 
+                    {
+                    let authors = paper[SCOPUS_AUTHOR_ID];
+                    let detectedAuthors = repeatedAuthors.filter(repeatedAuthor => authors.includes(repeatedAuthor));
+                    detectedAuthors.forEach(detectedAuthor => 
+                        {
+                        if (detectedAuthor in accum)
+                            {
+                            accum[detectedAuthor].push(paper);
+                            }
+                        else    
+                            {
+                            accum[detectedAuthor] = [paper];  
+                            }
+                        });
+                    return accum;
+                    } , {});
+//    console.log(repeatedPaperGrouping);
+    // Do the similarity analysis for paper with repeat authors
+    let repeatSimilarities = repeatedAuthors.map(author => ({author, ...paperSetSimilarity(repeatedPaperGrouping[author])}));
+    let repeatSimMedian = medianNumber(repeatSimilarities.map(({similarityMedian}) => similarityMedian)); 
+    let repeatSimMax = medianNumber(repeatSimilarities.map(({similarityMax}) => similarityMax)); 
+
+/*let al = repeatSimilarities.map(({similarityMedian}) => similarityMedian);
+let bl = repeatSimilarities.map(({similarityMax}) => similarityMax);
+al.sort((a,b) => a - b );
+bl.sort((a,b) => a - b );
+console.log(al);    
+console.log(bl);    
+throw "testing"*/
+//    console.log(repeatSimilarities)
+/*, 
+        repeatSimilarities.map(({similarity}) => similarity),
+        repeatSimMedian);*/
+    // Do the similarity of other papers without repeat authors as baseline
+    let noRepetitions = cleanContent.filter(({[SCOPUS_AUTHOR_ID]:authors}) => repeatedAuthors.some(repeatedAuthor => !authors.includes(repeatedAuthor)));
+//console.log(noRepetitions);    
+    let uniqueSimilarities = baselineSimilarities(noRepetitions);
+    let uniqueSimMedian = medianNumber(uniqueSimilarities.map(({similarityMedian}) => similarityMedian)); 
+    let uniqueSimMax = medianNumber(uniqueSimilarities.map(({similarityMax}) => similarityMax)); 
+//    console.log(uniqueSimilarities, uniqueSimMedian, uniqueSimMax);
+
+//throw "breakpoint"
 
     // DEMOs based on similar author profiles
     // check to see if there are potential demo papers. Based on looking for iodentical author profiles.  
@@ -728,7 +783,7 @@ console.log(demos);*/
     let portionPapersWithMultipleAuthors = (noPapersWithRepeatedAuthors/noPapers).toFixed(2);
     
     // output the results
-    let summaryStats = {name, maxPapersPerAuthor, noAuthorsWithMultiplePapers, noUniqueAuthors, noPapers, noPapersWithRepeatedAuthors, medianAge, medianReferencelistLength, authorsPerPaper, medianNoAuthors,meanNoAuthors, portionAuthorsWithMultiplePapers, portionPapersWithMultipleAuthors};
+    let summaryStats = {name, maxPapersPerAuthor, noAuthorsWithMultiplePapers, noUniqueAuthors, noPapers, noPapersWithRepeatedAuthors, medianAge, medianReferencelistLength, authorsPerPaper, medianNoAuthors,meanNoAuthors, portionAuthorsWithMultiplePapers, portionPapersWithMultipleAuthors, repeatSimMedian, repeatSimMax, uniqueSimMedian, uniqueSimMax};
     return {summaryStats, authorsStat};
     }
 
@@ -739,4 +794,119 @@ function show(id)
 function hide(id)
     {
     document.getElementById(id).style = "display:none;"; 
+    }
+
+
+
+// added 03/11/2024
+function medianNumber(list)
+    {
+//    list.sort((a,b) => a > b? 1: 0);
+    list.sort((a,b) => a - b);
+    let midPoint = Math.floor(list.length / 2);
+    if ((list.length % 2) == 0)
+        {
+        return (list[midPoint - 1] + list[midPoint]) / 2; 
+        }
+    else    
+        {
+        return list[midPoint];
+        }
+//    let midPoint = Math.floor(list.length / 2);
+//    return list[midPoint];
+    }
+
+/*    console.log(medianNumber([]))
+    console.log(medianNumber([2]))
+    console.log(medianNumber([2,3]))
+    console.log(medianNumber([2,3,5]))
+    console.log(medianNumber([2,3,5,6]))
+    console.log(medianNumber([2,3,5,6,9]))*/
+
+function paperSetSimilarity(paperList)
+    {
+    let similarities = [];
+    paperList.forEach(p1 => 
+        {
+        paperList.forEach(p2 => 
+            {
+            if (p1.EID !== p2.EID)
+                {
+                let sim = paperSimilarity(p1, p2);
+                similarities.push(sim);
+                }
+            })
+        });
+    return ({similarityMedian: medianNumber(similarities), similarityMax: Math.max(...similarities)});
+//    similarities.sort((a,b) => a > b? 1: 0);
+//    let midPoint = Math.floor(similarities.length / 2);
+//    return similarities[midPoint];
+    }
+
+function getKeywords(paper)
+    {
+//console.log(paper)
+//console.log(paper[SCOPUS_AUTHOR_KEYWORDS])
+    if (paper == undefined)
+        {
+        return [];
+        }
+    let keywords = (paper[SCOPUS_AUTHOR_KEYWORDS]??"").split(";");
+    keywords = [...keywords, ...(paper[SCOPUS_INDEX_KEYWORDS]??"").split(";")];
+    keywords = keywords.map(keyword => keyword.trim())
+                       .map(keyword => keyword.toLowerCase());
+//    console.log(keywords)
+    return keywords;
+    }
+
+function bagOfWordsDifference(keywords1, keywords2)
+    {
+    return bagDifference(new Set(keywords1), new Set(keywords2));
+//    let set1 = new Set(keywords1);
+//    let set2 = new Set(keywords2);
+//    let intersection = set1.intersection(set2);
+//console.log(set1, set2, intersection)    
+//    return 2 * intersection.size / (set1.size + set2.size); 
+    }
+
+function bagDifference(set1, set2)
+    {
+    let intersection = set1.intersection(set2);
+    return 2 * intersection.size / (set1.size + set2.size);         
+    }
+//console.log(bagOfWordsDifference(["one","two","three"], ["four","two","three"]));
+
+function paperSimilarity(p1, p2)
+    {
+    // extract all the keywords
+    let keywords1 = getKeywords(p1);
+    let keywords2 = getKeywords(p2);
+    return bagOfWordsDifference(keywords1, keywords2);
+    }
+
+function baselineSimilarities(noRepetitions)
+    {
+    // prepare efficient datastructure
+    noRepetitions = noRepetitions.map(paper => ({...paper, keywords: getKeywords(paper)}) )
+                                 .map(paper => ({...paper, bagOfWords: new Set(paper.keywords)}));
+    // for each paper process and find similarity profile with others
+    noRepetitions = noRepetitions.map((p1,i) => 
+        {
+        let similarities = noRepetitions.filter((p2,j) => i !== j)
+                                        .map(p2 => bagDifference(p1.bagOfWords, p2.bagOfWords));
+        return ({...p1, similarities});
+        });
+    // find and return the descriptive  --- added a 0 at the end of the max in case it is a empty array
+    return noRepetitions.map(paper => ({...paper, similarityMedian: (paper.similarities.length > 0 ? medianNumber(paper.similarities):0), similarityMax: Math.max(...paper.similarities, 0)}));
+    }
+
+function authorSimilarities(author)
+    {
+    // get list of papers grouped by conference where the author is co-author
+    let authorList = masterList.filter(({[SCOPUS_AUTHOR_ID]:authors}) => authors !== undefined)
+                               .filter(({[SCOPUS_AUTHOR_ID]:authors}) => authors.includes(author));
+    // compute similarity across all these papers- we later group according to diversity
+    let similarityList = baselineSimilarities(authorList);
+    let meanSimilarity = medianNumber(similarityList.map(({similarityMedian}) => similarityMedian)); 
+    return meanSimilarity;
     }
